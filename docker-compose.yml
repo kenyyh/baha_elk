@@ -1,0 +1,88 @@
+version: '2.2'
+services:
+  mysql:
+    image: mysql
+    container_name: mysql
+    hostname: mysql
+    command: ['mysqld', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci','--default-authentication-plugin=mysql_native_password']
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+      - ./mysql/conf:/etc/mysql/conf.d
+    ports:
+      - 3306:3306
+    networks:
+      - es7net
+
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.2.0
+    container_name: elasticsearch
+    hostname: elasticsearch
+    restart: unless-stopped
+    environment:
+      - cluster.name=docker-cluster
+      - node.name=node1
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms384m -Xmx384m"
+      - "cluster.initial_master_nodes=node1"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./esdata:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+    networks:
+      - es7net
+
+  logstash:
+    build:
+      dockerfile: ${PWD}/Dockerfile
+      context: ${PWD}/
+    container_name: logstash
+    hostname: logstash
+    restart: always
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logstash/data:/opt/logstash_data
+      - ./logstash/template:/opt/logstash_template
+      - ./logstash/logs:/usr/share/logstash/logs
+    ports:
+      - "127.0.0.1:5000:5000/udp"
+    environment:
+      - "LS_JAVA_OPTS=-Xmx256m -Xms256m"
+      - LOGSTASH_JDBC_DRIVER=com.mysql.cj.jdbc.Driver
+      - LOGSTASH_JDBC_DRIVER_JAR_LOCATION=/usr/share/logstash/logstash-core/lib/jars/mysql-connector-java.jar
+      - LOGSTASH_JDBC_USERNAME=root
+      - LOGSTASH_JDBC_PASSWORD=example
+      - LOGSTASH_ELASTICSEARCH_HOST=http://elasticsearch:9200
+    networks:
+      - es7net
+    ports:
+      - 9600:9600
+      - 5044:5044
+    depends_on:
+      - elasticsearch
+
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana-oss:7.2.0
+    container_name: kibana
+    hostname: kibana
+    environment:
+      SERVER_NAME: kibana_server
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    networks:
+      - es7net
+    depends_on:
+      - elasticsearch
+    ports:
+      - 5601:5601
+
+
+networks:
+  es7net:
